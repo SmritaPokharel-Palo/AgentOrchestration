@@ -62,17 +62,51 @@ steps:
 
   - wait
 
+  # 4. Post-Deployment Verification
+  - label: ":fire: Smoke Tests (Staging)"
+    key: "smoke-tests"
+    depends_on: "deploy-staging"
+    commands:
+      - "echo 'Verifying deployment with smoke tests...'"
+      - "curl -f https://staging-agent-orchestrator.example.com/health || exit 1"
+
+  - label: ":cypress: E2E Verification (Cypress/Playwright)"
+    key: "e2e-tests"
+    depends_on: "deploy-staging"
+    commands:
+      - "npm run test:e2e --if-present"
+    retry:
+      automatic:
+        - exit_status: "*"
+          limit: 1
+
+  - wait
+
+  # 5. Production Gate & Stage
   - label: ":white_check_mark: Production: Manual Gate"
     if: build.branch == "main"
     block: "🏢 Deploy to PRODUCTION?"
-    prompt: "Final approval for production deployment?"
+    prompt: "Staging verified. Final approval for production deployment?"
 
   - label: ":earth_americas: Deploy to Production"
     key: "deploy-prod"
-    depends_on: "deploy-staging"
+    depends_on: ["deploy-staging", "smoke-tests", "e2e-tests"]
     if: build.branch == "main"
     concurrency_group: "prod-deployment"
     concurrency: 1
     commands:
       - "echo 'Deploying to production environment...'"
       - "terraform -chdir=terraform apply -auto-approve"
+
+  - wait
+
+  # 6. Automated Release & Notifications
+  - label: ":rocket: Semantic Release & Tagging"
+    key: "release"
+    depends_on: "deploy-prod"
+    if: build.branch == "main"
+    commands:
+      - "npm run release --if-present"
+      - "echo 'Build successfully released! Sending Slack notification...'"
+    agents:
+      queue: "default"
