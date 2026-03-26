@@ -1,29 +1,41 @@
+env:
+  PROJECT_NAME: "AgentOrchestration"
+  NODE_VERSION: "20"
+
 steps:
+  # 1. Build and Test Stage
   - label: ":nodejs: Build & Verify"
-    key: "verify"
+    key: "build-and-test"
     commands:
       - "npm ci"
-      - "npm run lint --if-present"
       - "npm run build --if-present"
       - "npm test --if-present"
-    plugins:
-      - docker-compose#v4.16.0:
-          run: app # Assumes a 'app' service in docker-compose.yml (optional)
+    artifact_paths:
+      - "dist/**/*"
+      - "coverage/**/*"
+    retry:
+      automatic:
+        - exit_status: "*"
+          limit: 2
     agents:
       queue: "default"
 
   - wait
 
-  - label: ":lock: Security Scans (Trivy & Audit)"
-    depends_on: "verify"
+  # 2. Security Stage
+  - label: ":lock: Security Audit & Scan"
+    key: "security"
+    depends_on: "build-and-test"
+    parallelism: 2
     commands:
       - "npm audit --audit-level=high"
       - "trivy fs . --severity HIGH,CRITICAL"
     agents:
       queue: "default"
 
-  - label: ":terraform: Infrastructure Lint"
-    depends_on: "verify"
+  - label: ":terraform: Infrastructure Check"
+    key: "iac-scan"
+    depends_on: "build-and-test"
     commands:
       - "cd terraform && terraform init -backend=false && terraform validate"
       - "checkov -d terraform/ --quiet --soft-fail"
@@ -32,14 +44,35 @@ steps:
 
   - wait
 
-  - label: ":rocket: Deployment (Manual Approval)"
+  # 3. Deployment Gates & Stages
+  - label: ":rocket: Staging: Manual Approval"
     if: build.branch == "main"
-    block: "🚀 Deploy to Staging?"
-    prompt: "Ready to push the agent orchestrator to staging?"
+    block: "🚀 Deploy to STAGING?"
+    prompt: "Ready to deploy the Agent Orchestrator to stage?"
 
   - label: ":shipit: Deploy to Staging"
-    depends_on: "verify"
+    key: "deploy-staging"
+    depends_on: "iac-scan"
     if: build.branch == "main"
+    concurrency_group: "staging-deployment"
+    concurrency: 1
     commands:
-      - "echo 'Deploying to staging...'"
+      - "echo 'Deploying to staging environment...'"
+      - "terraform -chdir=terraform apply -auto-approve"
+
+  - wait
+
+  - label: ":white_check_mark: Production: Manual Gate"
+    if: build.branch == "main"
+    block: "🏢 Deploy to PRODUCTION?"
+    prompt: "Final approval for production deployment?"
+
+  - label: ":earth_americas: Deploy to Production"
+    key: "deploy-prod"
+    depends_on: "deploy-staging"
+    if: build.branch == "main"
+    concurrency_group: "prod-deployment"
+    concurrency: 1
+    commands:
+      - "echo 'Deploying to production environment...'"
       - "terraform -chdir=terraform apply -auto-approve"
