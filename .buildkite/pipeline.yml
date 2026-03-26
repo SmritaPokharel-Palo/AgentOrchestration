@@ -1,0 +1,45 @@
+steps:
+  - label: ":nodejs: Build & Verify"
+    key: "verify"
+    commands:
+      - "npm ci"
+      - "npm run lint --if-present"
+      - "npm run build --if-present"
+      - "npm test --if-present"
+    plugins:
+      - docker-compose#v4.16.0:
+          run: app # Assumes a 'app' service in docker-compose.yml (optional)
+    agents:
+      queue: "default"
+
+  - wait
+
+  - label: ":lock: Security Scans (Trivy & Audit)"
+    depends_on: "verify"
+    commands:
+      - "npm audit --audit-level=high"
+      - "trivy fs . --severity HIGH,CRITICAL"
+    agents:
+      queue: "default"
+
+  - label: ":terraform: Infrastructure Lint"
+    depends_on: "verify"
+    commands:
+      - "cd terraform && terraform init -backend=false && terraform validate"
+      - "checkov -d terraform/ --quiet --soft-fail"
+    agents:
+      queue: "default"
+
+  - wait
+
+  - label: ":rocket: Deployment (Manual Approval)"
+    if: build.branch == "main"
+    block: "🚀 Deploy to Staging?"
+    prompt: "Ready to push the agent orchestrator to staging?"
+
+  - label: ":shipit: Deploy to Staging"
+    depends_on: "verify"
+    if: build.branch == "main"
+    commands:
+      - "echo 'Deploying to staging...'"
+      - "terraform -chdir=terraform apply -auto-approve"
