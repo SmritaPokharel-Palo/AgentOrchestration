@@ -1,0 +1,13 @@
+{
+  "name": "agent-orchestration",
+  "version": "0.1.0",
+  "description": "Enterprise-grade Agent Orchestrator with Claude Code",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc --if-present",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.36.3"
+  }
+}

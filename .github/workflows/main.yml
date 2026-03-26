@@ -1,0 +1,61 @@
+name: Enterprise CI/CD
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main", "develop" ]
+
+jobs:
+  # 1. Verification Job (Linting, Build, Test)
+  verify:
+    name: Verify & Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+      - run: npm ci
+      - name: Linting check
+        run: npm run lint --if-present
+      - name: Run Tests
+        run: npm test --if-present
+      - name: Build Application
+        run: npm run build --if-present
+
+  # 2. Security Job (SCA, SAST, Secrets)
+  security:
+    name: Security Scans
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependency Audit (NPM)
+        run: npm audit --audit-level=high
+      - name: Secret Scanning (TruffleHog/Gitleaks)
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --only-verified
+      - name: Container Scan (Trivy - for Docker projects)
+        if: github.event_name == 'push'
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          security-checks: 'vuln,secret,config'
+          format: 'table'
+
+  # 3. Infrastructure Security (Terraform / Checkov)
+  iac-security:
+    name: IaC Security (Checkov)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkov Scan
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: terraform/
+          framework: terraform
+          quiet: true
+          soft_fail: true # Allow PRs to continue for visibility
