@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "AgentOrchestration",
+  "project_id": "672b44ab-9eb8-4da4-9d05-2cddeb2cd083"
+}

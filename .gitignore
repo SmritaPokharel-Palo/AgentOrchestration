@@ -15,3 +15,7 @@ yarn-error.log*
 .terraform/
 *.tfstate
 *.tfstate.backup
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
